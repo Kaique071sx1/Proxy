@@ -7,7 +7,7 @@ import time
 from flask import Flask, jsonify
 from pyngrok import ngrok, conf
 
-# Configurações
+# --- Configurações ---
 PROXY_HOST = '0.0.0.0'
 PROXY_PORT = int(os.getenv('ROOT_PORT', 9090))
 PROXY_USER = os.getenv('USER', 'user')
@@ -16,7 +16,7 @@ NGROK_TOKEN = os.getenv('NGROK_TOKEN')
 
 app = Flask(__name__)
 
-# --- API PARA VER O IP (Mantida) ---
+# --- API IP ---
 @app.route('/ip', methods=['GET'])
 def get_ip():
     try:
@@ -30,7 +30,7 @@ def get_ip():
 def health_check():
     return "Proxy Online", 200
 
-# --- LÓGICA DO PROXY SOCKS5 ---
+# --- PROXY SOCKS5 ---
 def handle_client(client_socket):
     try:
         header = client_socket.recv(2)
@@ -98,37 +98,51 @@ def handle_client(client_socket):
         if client_socket: client_socket.close()
 
 def start_proxy_server():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind((PROXY_HOST, PROXY_PORT))
-    server.listen(5)
-    while True:
-        client, _ = server.accept()
-        threading.Thread(target=handle_client, args=(client,)).start()
+    try:
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind((PROXY_HOST, PROXY_PORT))
+        server.listen(5)
+        print(f"[*] Proxy SOCKS5 rodando na porta interna {PROXY_PORT}", flush=True)
+        while True:
+            client, _ = server.accept()
+            threading.Thread(target=handle_client, args=(client,)).start()
+    except Exception as e:
+        print(f"[!] Erro ao iniciar Proxy: {e}", flush=True)
 
+# --- CONFIGURAÇÃO NGROK ---
 def start_ngrok():
-    if NGROK_TOKEN:
-        conf.get_default().auth_token = NGROK_TOKEN
-        # Abre um túnel TCP para a porta 9090
+    print("[*] Iniciando Ngrok...", flush=True)
+    if not NGROK_TOKEN:
+        print("[!] ERRO: NGROK_TOKEN nao encontrado nas variaveis de ambiente!", flush=True)
+        return
+
+    try:
+        # Define o token explicitamente
+        ngrok.set_auth_token(NGROK_TOKEN)
+        
+        # Cria o túnel TCP
         url = ngrok.connect(PROXY_PORT, "tcp")
-        print("==========================================")
-        print(f"PROXY SOCKS5 DISPONIVEL EM: {url.public_url}")
-        print("Use o endereço acima (sem 'tcp://') no seu cliente.")
-        print("==========================================")
-    else:
-        print("NGROK_TOKEN não encontrado. O proxy não será acessível externamente.")
+        
+        print("\n==========================================", flush=True)
+        print(f"SUCESSO! PROXY DISPONIVEL EM: {url.public_url}", flush=True)
+        print("Use o endereco acima (sem 'tcp://') no seu app.", flush=True)
+        print("==========================================\n", flush=True)
+        
+    except Exception as e:
+        print(f"[!] ERRO CRITICO NGROK: {e}", flush=True)
 
 if __name__ == '__main__':
-    # Inicia o Proxy SOCKS5
-    proxy_thread = threading.Thread(target=start_proxy_server)
-    proxy_thread.daemon = True
-    proxy_thread.start()
+    # Inicia Threads
+    t_proxy = threading.Thread(target=start_proxy_server)
+    t_proxy.daemon = True
+    t_proxy.start()
 
-    # Inicia o Túnel Ngrok
-    ngrok_thread = threading.Thread(target=start_ngrok)
-    ngrok_thread.daemon = True
-    ngrok_thread.start()
+    t_ngrok = threading.Thread(target=start_ngrok)
+    t_ngrok.daemon = True
+    t_ngrok.start()
     
-    # Inicia a API Flask (para o Render não desligar o app)
+    # Inicia Flask
     port = int(os.environ.get("PORT", 10000))
+    print(f"[*] Iniciando Webserver na porta {port}", flush=True)
     app.run(host='0.0.0.0', port=port)
