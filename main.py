@@ -15,7 +15,10 @@ app = Flask(__name__)
 @app.route('/ip', methods=['GET'])
 def get_ip():
     try:
-        response = requests.get('https://ifconfig.co/json')
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get('https://api.ipify.org?format=json', headers=headers, timeout=10)
         return jsonify(response.json())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
